@@ -24,14 +24,15 @@ function Login({ onLogin }) {
       setLoading(true);
       setError("");
 
-      const response = await axios.post(
-        "http://localhost:5000/login",
-        {
-          username,
-          password,
-        }
-      );
+     const API_URL = import.meta.env.VITE_API_URL;
 
+const response = await axios.post(
+  `${API_URL}/login`,
+  {
+    username,
+    password,
+  }
+);
       localStorage.setItem(
         "token",
         response.data.token
