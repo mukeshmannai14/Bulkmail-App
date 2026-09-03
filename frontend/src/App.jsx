@@ -152,7 +152,7 @@ function App() {
       const token = localStorage.getItem("token");
 
       const response = await axios.post(
-        "http://localhost:5000/sendemail",
+  `${import.meta.env.VITE_API_URL}/sendemail`,
         {
           subject: subject,
           msg: msg,
