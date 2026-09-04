@@ -10,18 +10,16 @@ function History() {
 
     try {
 
-      const token =
-        localStorage.getItem("token");
+      const API_URL = import.meta.env.VITE_API_URL;
 
-      const response = await axios.get(
-        "http://localhost:5000/history",
-        {
-          headers: {
-            Authorization:
-              `Bearer ${token}`,
-          },
-        }
-      );
+const response = await axios.get(
+  `${API_URL}/history`,
+  {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  }
+);
 
       setHistory(response.data);
 

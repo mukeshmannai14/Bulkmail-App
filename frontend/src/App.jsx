@@ -151,20 +151,21 @@ function App() {
 
       const token = localStorage.getItem("token");
 
-      const response = await axios.post(
-  `${import.meta.env.VITE_API_URL}/sendemail`,
-        {
-          subject: subject,
-          msg: msg,
-          emailList: emailList,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const API_URL = import.meta.env.VITE_API_URL;
 
+const response = await axios.post(
+  `${API_URL}/sendemail`,
+  {
+    subject,
+    msg,
+    emailList,
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
       console.log(
         "Backend response:",
         response.data
