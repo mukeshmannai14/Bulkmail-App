@@ -30,10 +30,10 @@ function Login({ onLogin }) {
       console.log("API URL:", API_URL);
 
       // Send login request
-      const response = await axios.post(`${API_URL}/login`, {
-        username: username.trim(),
+      const response = await axios.post(`${API_URL}/auth/login`, {
+         username,
         password,
-      });
+});
 
       console.log("Login response:", response.data);
 
