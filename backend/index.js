@@ -14,89 +14,172 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// ============================================
+// CONFIGURATION
+// ============================================
 
+const PORT = process.env.PORT || 5000;
 
 // ============================================
-// MongoDB
+// MIDDLEWARE
+// ============================================
+
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+app.use(express.json());
+
+// ============================================
+// MONGODB CONNECTION
 // ============================================
 
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
-    console.log("MongoDB connected successfully");
+    console.log("✅ MongoDB connected successfully");
   })
   .catch((error) => {
-    console.log("MongoDB connection error:");
+    console.log("❌ MongoDB connection error:");
     console.log(error.message);
   });
 
-
 // ============================================
-// Authentication Middleware
+// AUTHENTICATION MIDDLEWARE
 // ============================================
 
 function authenticateToken(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
 
-  const authHeader = req.headers["authorization"];
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. Please login.",
+      });
+    }
 
-  const token = authHeader && authHeader.split(" ")[1];
+    const parts = authHeader.split(" ");
 
-  if (!token) {
-    return res.status(401).json({
-      message: "Access denied. Please login.",
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authorization format.",
+      });
+    }
+
+    const token = parts[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. Please login.",
+      });
+    }
+
+    jwt.verify(
+      token,
+      process.env.JWT_SECRET,
+      (error, user) => {
+        if (error) {
+          return res.status(403).json({
+            success: false,
+            message: "Invalid or expired token.",
+          });
+        }
+
+        req.user = user;
+        next();
+      }
+    );
+  } catch (error) {
+    console.log("❌ Authentication error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Authentication error.",
     });
   }
-
-  jwt.verify(
-    token,
-    process.env.JWT_SECRET,
-    (error, user) => {
-
-      if (error) {
-        return res.status(403).json({
-          message: "Invalid or expired token.",
-        });
-      }
-
-      req.user = user;
-
-      next();
-    }
-  );
 }
 
+// ============================================
+// ROOT ROUTE
+// ============================================
+
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "BulkMail Backend is running",
+  });
+});
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+
+app.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    backend: true,
+    mongodb:
+      mongoose.connection.readyState === 1,
+  });
+});
 
 // ============================================
 // ADMIN LOGIN
 // ============================================
 
-app.post("/login", async (req, res) => {
-
+app.post("/auth/login", async (req, res) => {
   try {
-
     const { username, password } = req.body;
 
-    if (!username || !password) {
+    // ----------------------------------------
+    // Validate request
+    // ----------------------------------------
 
+    if (!username || !password) {
       return res.status(400).json({
+        success: false,
         message: "Username and password are required.",
       });
-
     }
 
+    // ----------------------------------------
+    // Check JWT secret
+    // ----------------------------------------
+
+    if (!process.env.JWT_SECRET) {
+      console.log("❌ JWT_SECRET is missing");
+
+      return res.status(500).json({
+        success: false,
+        message: "JWT configuration is missing.",
+      });
+    }
+
+    // ----------------------------------------
+    // Find user
+    // ----------------------------------------
+
     const user = await User.findOne({
-      username: username,
+      username: username.trim(),
     });
 
     if (!user) {
-
       return res.status(401).json({
+        success: false,
         message: "Invalid username or password.",
       });
-
     }
+
+    // ----------------------------------------
+    // Compare password
+    // ----------------------------------------
 
     const passwordMatch = await bcrypt.compare(
       password,
@@ -104,12 +187,15 @@ app.post("/login", async (req, res) => {
     );
 
     if (!passwordMatch) {
-
       return res.status(401).json({
+        success: false,
         message: "Invalid username or password.",
       });
-
     }
+
+    // ----------------------------------------
+    // Generate JWT
+    // ----------------------------------------
 
     const token = jwt.sign(
       {
@@ -122,24 +208,30 @@ app.post("/login", async (req, res) => {
       }
     );
 
-    res.json({
+    console.log(
+      `✅ Login successful: ${user.username}`
+    );
+
+    // ----------------------------------------
+    // Send response
+    // ----------------------------------------
+
+    return res.status(200).json({
+      success: true,
       message: "Login successful",
       token: token,
       username: user.username,
     });
-
   } catch (error) {
+    console.log("❌ Login error:");
+    console.log(error);
 
-    console.log("Login error:", error);
-
-    res.status(500).json({
+    return res.status(500).json({
+      success: false,
       message: "Server error",
     });
-
   }
-
 });
-
 
 // ============================================
 // SEND EMAIL
@@ -149,53 +241,111 @@ app.post(
   "/sendemail",
   authenticateToken,
   async (req, res) => {
-
     try {
-
       const {
         subject,
         msg,
-        emailList,
+        emails,
       } = req.body;
 
-
       console.log("================================");
-      console.log("Message:", msg);
+      console.log("📧 SEND EMAIL REQUEST");
       console.log("Subject:", subject);
-      console.log("Email List:", emailList);
+      console.log("Message:", msg);
+      console.log("Email List:", emails);
       console.log("================================");
 
-
       // ----------------------------------------
-      // Validation
+      // Validate subject
       // ----------------------------------------
 
-      if (!subject || subject.trim() === "") {
-
+      if (
+        !subject ||
+        typeof subject !== "string" ||
+        subject.trim() === ""
+      ) {
         return res.status(400).json({
+          success: false,
           message: "Subject is required.",
         });
-
       }
 
+      // ----------------------------------------
+      // Validate message
+      // ----------------------------------------
 
-      if (!msg || msg.trim() === "") {
-
+      if (
+        !msg ||
+        typeof msg !== "string" ||
+        msg.trim() === ""
+      ) {
         return res.status(400).json({
+          success: false,
           message: "Message is required.",
         });
-
       }
 
+      // ----------------------------------------
+      // Validate emails
+      // ----------------------------------------
 
-      if (!emailList || emailList.length === 0) {
-
+      if (!Array.isArray(emails) || emails.length === 0) {
         return res.status(400).json({
+          success: false,
           message: "Email list is empty.",
         });
-
       }
 
+      // ----------------------------------------
+      // Clean email list
+      // ----------------------------------------
+
+      const emailList = [
+        ...new Set(
+          emails
+            .map((email) =>
+              String(email).trim().toLowerCase()
+            )
+            .filter((email) => email !== "")
+        ),
+      ];
+
+      if (emailList.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No valid email addresses found.",
+        });
+      }
+
+      // ----------------------------------------
+      // Basic email validation
+      // ----------------------------------------
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      const invalidEmails = emailList.filter(
+        (email) => !emailRegex.test(email)
+      );
+
+      if (invalidEmails.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid email address found.",
+          invalidEmails,
+        });
+      }
+
+      // ----------------------------------------
+      // Check MongoDB connection
+      // ----------------------------------------
+
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(500).json({
+          success: false,
+          message: "MongoDB is not connected.",
+        });
+      }
 
       // ----------------------------------------
       // Get Gmail credentials from MongoDB
@@ -203,95 +353,106 @@ app.post(
 
       const emailData = await Email.findOne();
 
-
       if (!emailData) {
-
         console.log(
-          "Email credentials not found in MongoDB"
+          "❌ Email credentials not found in MongoDB"
         );
 
         return res.status(500).json({
+          success: false,
           message:
             "Email credentials not found in MongoDB.",
         });
-
       }
 
+      if (
+        !emailData.email ||
+        !emailData.password
+      ) {
+        return res.status(500).json({
+          success: false,
+          message:
+            "Email credentials are incomplete.",
+        });
+      }
 
       console.log(
-        "Gmail user found:",
+        "📨 Gmail account:",
         emailData.email
       );
 
-
       // ----------------------------------------
-      // Create transporter
+      // Create Nodemailer transporter
       // ----------------------------------------
 
       const transporter =
         nodemailer.createTransport({
-
           service: "gmail",
 
           auth: {
             user: emailData.email,
             pass: emailData.password,
           },
-
         });
 
+      // ----------------------------------------
+      // Verify Gmail connection
+      // ----------------------------------------
+
+      try {
+        await transporter.verify();
+
+        console.log(
+          "✅ Gmail transporter verified"
+        );
+      } catch (error) {
+        console.log(
+          "❌ Gmail transporter verification failed:"
+        );
+
+        console.log(error.message);
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "Unable to connect to Gmail. Check email credentials.",
+        });
+      }
 
       // ----------------------------------------
-      // Create campaign record
+      // Create campaign
       // ----------------------------------------
 
       const campaign = await Campaign.create({
-
-        subject: subject,
-
-        body: msg,
-
+        subject: subject.trim(),
+        body: msg.trim(),
         recipients: emailList,
-
         status: "pending",
-
       });
 
+      // ----------------------------------------
+      // Counters
+      // ----------------------------------------
 
       let sentCount = 0;
-
       let failedCount = 0;
 
-
       // ----------------------------------------
-      // Send emails
+      // Send emails one by one
       // ----------------------------------------
 
-      for (
-        let i = 0;
-        i < emailList.length;
-        i++
-      ) {
-
+      for (const recipient of emailList) {
         try {
-
           const info =
             await transporter.sendMail({
-
               from: emailData.email,
-
-              to: emailList[i],
-
-              subject: subject,
-
-              text: msg,
-
+              to: recipient,
+              subject: subject.trim(),
+              text: msg.trim(),
             });
 
-
           console.log(
-            "Email sent:",
-            emailList[i]
+            `✅ Email sent: ${recipient}`
           );
 
           console.log(
@@ -299,26 +460,17 @@ app.post(
             info.messageId
           );
 
-
           sentCount++;
-
         } catch (error) {
-
           console.log(
-            "Failed to send:",
-            emailList[i]
+            `❌ Failed to send: ${recipient}`
           );
 
-          console.log(
-            error.message
-          );
+          console.log(error.message);
 
           failedCount++;
-
         }
-
       }
-
 
       // ----------------------------------------
       // Determine campaign status
@@ -326,74 +478,51 @@ app.post(
 
       let campaignStatus;
 
-
       if (sentCount === emailList.length) {
-
         campaignStatus = "success";
-
       } else if (sentCount === 0) {
-
         campaignStatus = "failed";
-
       } else {
-
         campaignStatus = "partial";
-
       }
 
-
       // ----------------------------------------
-      // Update MongoDB campaign
+      // Update campaign
       // ----------------------------------------
 
       campaign.sent = sentCount;
-
       campaign.failed = failedCount;
-
       campaign.status = campaignStatus;
 
       await campaign.save();
-
 
       // ----------------------------------------
       // Response
       // ----------------------------------------
 
-      res.json({
-
+      return res.status(200).json({
+        success: true,
         message: "Email process completed",
-
         status: campaignStatus,
-
+        total: emailList.length,
         sent: sentCount,
-
         failed: failedCount,
-
         campaignId: campaign._id,
-
       });
-
-
     } catch (error) {
-
       console.log(
-        "Send email error:"
+        "❌ Send email error:"
       );
 
       console.log(error);
 
-
-      res.status(500).json({
-
+      return res.status(500).json({
+        success: false,
         message: "Server error",
-
       });
-
     }
-
   }
 );
-
 
 // ============================================
 // EMAIL HISTORY
@@ -403,37 +532,30 @@ app.get(
   "/history",
   authenticateToken,
   async (req, res) => {
-
     try {
-
       const campaigns =
         await Campaign.find()
           .sort({
             createdAt: -1,
           });
 
-
-      res.json(campaigns);
-
+      return res.status(200).json(
+        campaigns
+      );
     } catch (error) {
-
       console.log(
-        "History error:",
+        "❌ History error:",
         error
       );
 
-      res.status(500).json({
-
+      return res.status(500).json({
+        success: false,
         message:
           "Unable to fetch history.",
-
       });
-
     }
-
   }
 );
-
 
 // ============================================
 // GET SINGLE CAMPAIGN
@@ -443,64 +565,85 @@ app.get(
   "/history/:id",
   authenticateToken,
   async (req, res) => {
-
     try {
-
       const campaign =
         await Campaign.findById(
           req.params.id
         );
 
-
       if (!campaign) {
-
         return res.status(404).json({
-
+          success: false,
           message:
             "Campaign not found.",
-
         });
-
       }
 
-
-      res.json(campaign);
-
+      return res.status(200).json(
+        campaign
+      );
     } catch (error) {
+      console.log(
+        "❌ Get campaign error:",
+        error
+      );
 
-      console.log(error);
-
-      res.status(500).json({
-
+      return res.status(500).json({
+        success: false,
         message: "Server error",
-
       });
-
     }
-
   }
 );
 
-
 // ============================================
-// TEST ROUTE
+// 404 ROUTE
 // ============================================
 
-app.get("/", (req, res) => {
-
-  res.send("BulkMail Backend is running");
-
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.originalUrl} not found.`,
+  });
 });
 
+// ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
+
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.log(
+      "❌ Global error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error.",
+    });
+  }
+);
 
 // ============================================
-// SERVER
+// LOCAL SERVER
 // ============================================
 
-app.listen(5000, () => {
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(
+      `🚀 Server started on port ${PORT}`
+    );
+  });
+}
 
-  console.log(
-    "Server started on port 5000"
-  );
+// ============================================
+// VERCEL EXPORT
+// ============================================
 
-});
+module.exports = app;
