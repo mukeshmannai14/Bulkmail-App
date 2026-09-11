@@ -64,13 +64,19 @@ function App() {
           type: "binary",
         });
 
-        const sheetName = workbook.SheetNames[0];
+        const sheetName =
+          workbook.SheetNames[0];
 
-        const worksheet = workbook.Sheets[sheetName];
+        const worksheet =
+          workbook.Sheets[sheetName];
 
-        const dataList = XLSX.utils.sheet_to_json(worksheet, {
-          header: "A",
-        });
+        const dataList =
+          XLSX.utils.sheet_to_json(
+            worksheet,
+            {
+              header: "A",
+            }
+          );
 
         const totalEmail = dataList
           .map(function (item) {
@@ -80,16 +86,29 @@ function App() {
             return (
               email &&
               typeof email === "string" &&
-              email.toLowerCase() !== "email" &&
+              email
+                .trim()
+                .toLowerCase() !== "email" &&
               email.includes("@")
             );
+          })
+          .map(function (email) {
+            return email.trim().toLowerCase();
           });
 
-        console.log("Email List:", totalEmail);
+        // Remove duplicate emails
+        const uniqueEmails = [
+          ...new Set(totalEmail),
+        ];
 
-        setEmailList(totalEmail);
+        console.log(
+          "Email List:",
+          uniqueEmails
+        );
 
-        if (totalEmail.length === 0) {
+        setEmailList(uniqueEmails);
+
+        if (uniqueEmails.length === 0) {
           setMessage(
             "No valid email addresses found in the file."
           );
@@ -97,13 +116,16 @@ function App() {
           setMessageType("error");
         } else {
           setMessage(
-            `${totalEmail.length} email addresses loaded successfully.`
+            `${uniqueEmails.length} email addresses loaded successfully.`
           );
 
           setMessageType("success");
         }
       } catch (error) {
-        console.error("Excel error:", error);
+        console.error(
+          "Excel error:",
+          error
+        );
 
         setMessage(
           "Unable to read the Excel file."
@@ -121,17 +143,37 @@ function App() {
   // ==============================
 
   async function send() {
+    // --------------------------------
+    // Subject validation
+    // --------------------------------
+
     if (subject.trim() === "") {
-      setMessage("Please enter an email subject.");
+      setMessage(
+        "Please enter an email subject."
+      );
+
       setMessageType("error");
+
       return;
     }
 
+    // --------------------------------
+    // Message validation
+    // --------------------------------
+
     if (msg.trim() === "") {
-      setMessage("Please enter your email message.");
+      setMessage(
+        "Please enter your email message."
+      );
+
       setMessageType("error");
+
       return;
     }
+
+    // --------------------------------
+    // Email list validation
+    // --------------------------------
 
     if (emailList.length === 0) {
       setMessage(
@@ -143,79 +185,226 @@ function App() {
       return;
     }
 
+    // --------------------------------
+    // Token
+    // --------------------------------
+
+    const token =
+      localStorage.getItem("token");
+
+    if (!token) {
+      setMessage(
+        "Your session has expired. Please login again."
+      );
+
+      setMessageType("error");
+
+      setLoggedIn(false);
+
+      return;
+    }
+
+    // --------------------------------
+    // API URL
+    // --------------------------------
+
+    const API_URL =
+      import.meta.env.VITE_API_URL;
+
+    if (!API_URL) {
+      setMessage(
+        "Backend API URL is not configured."
+      );
+
+      setMessageType("error");
+
+      return;
+    }
+
     try {
       setStatus(true);
 
-      setMessage("Sending your emails...");
+      setMessage(
+        "Sending your emails..."
+      );
+
       setMessageType("sending");
 
-      const token = localStorage.getItem("token");
+      // --------------------------------
+      // Debug
+      // --------------------------------
 
-      const API_URL = import.meta.env.VITE_API_URL;
+      console.log(
+        "API URL:",
+        API_URL
+      );
 
-const response = await axios.post(
-  `${API_URL}/sendemail`,
-  {
-    subject,
-    msg,
-    emailList,
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  }
-);
+      console.log(
+        "Recipients:",
+        emailList
+      );
+
+      console.log(
+        "Recipient count:",
+        emailList.length
+      );
+
+      // --------------------------------
+      // Send request
+      // --------------------------------
+
+      const response =
+        await axios.post(
+          `${API_URL}/sendemail`,
+          {
+            subject:
+              subject.trim(),
+
+            msg:
+              msg.trim(),
+
+            // IMPORTANT:
+            // Backend expects "emails"
+            emails:
+              emailList,
+          },
+          {
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+
+              "Content-Type":
+                "application/json",
+            },
+          }
+        );
+
+      // --------------------------------
+      // Backend response
+      // --------------------------------
+
       console.log(
         "Backend response:",
         response.data
       );
 
-      if (response.data.status === "success") {
+      // --------------------------------
+      // Success
+      // --------------------------------
+
+      if (
+        response.data.status ===
+        "success"
+      ) {
         setMessage(
           `Successfully sent ${response.data.sent} emails.`
         );
 
-        setMessageType("success");
-      } else if (
-        response.data.status === "partial"
+        setMessageType(
+          "success"
+        );
+      }
+
+      // --------------------------------
+      // Partial
+      // --------------------------------
+
+      else if (
+        response.data.status ===
+        "partial"
       ) {
         setMessage(
           `Sent ${response.data.sent} emails. ${response.data.failed} failed.`
         );
 
-        setMessageType("error");
-      } else {
+        setMessageType(
+          "error"
+        );
+      }
+
+      // --------------------------------
+      // Failed
+      // --------------------------------
+
+      else {
         setMessage(
-          `Failed to send emails. ${response.data.failed || 0} failed.`
+          `Failed to send emails. ${
+            response.data.failed || 0
+          } failed.`
         );
 
-        setMessageType("error");
+        setMessageType(
+          "error"
+        );
       }
+
+      // --------------------------------
+      // Clear subject/message
+      // --------------------------------
 
       setSubject("");
       setMsg("");
+
     } catch (error) {
-      console.error("Error:", error);
+      console.error(
+        "Error:",
+        error
+      );
+
+      console.log(
+        "Status:",
+        error.response?.status
+      );
+
+      console.log(
+        "Backend response:",
+        error.response?.data
+      );
+
+      // --------------------------------
+      // Authentication error
+      // --------------------------------
 
       if (
-        error.response?.status === 401 ||
-        error.response?.status === 403
+        error.response?.status ===
+          401 ||
+        error.response?.status ===
+          403
       ) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("username");
+        localStorage.removeItem(
+          "token"
+        );
+
+        localStorage.removeItem(
+          "username"
+        );
 
         setLoggedIn(false);
 
+        setMessage(
+          "Your session has expired. Please login again."
+        );
+
+        setMessageType(
+          "error"
+        );
+
         return;
       }
+
+      // --------------------------------
+      // Other errors
+      // --------------------------------
 
       setMessage(
         error.response?.data?.message ||
           "Unable to send emails."
       );
 
-      setMessageType("error");
+      setMessageType(
+        "error"
+      );
+
     } finally {
       setStatus(false);
     }
@@ -226,10 +415,16 @@ const response = await axios.post(
   // ==============================
 
   function logout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
+    localStorage.removeItem(
+      "token"
+    );
+
+    localStorage.removeItem(
+      "username"
+    );
 
     setLoggedIn(false);
+
     setPage("dashboard");
   }
 
@@ -269,6 +464,7 @@ const response = await axios.post(
             </div>
 
             <div>
+
               <h1 className="text-xl font-bold">
                 BulkMail
               </h1>
@@ -276,6 +472,7 @@ const response = await axios.post(
               <p className="text-xs text-slate-500">
                 Email Campaign Manager
               </p>
+
             </div>
 
           </div>
@@ -285,7 +482,9 @@ const response = await axios.post(
           <div className="flex items-center gap-5 text-sm">
 
             <button
-              onClick={() => setPage("dashboard")}
+              onClick={() =>
+                setPage("dashboard")
+              }
               className={
                 page === "dashboard"
                   ? "text-blue-600 font-semibold"
@@ -296,7 +495,9 @@ const response = await axios.post(
             </button>
 
             <button
-              onClick={() => setPage("history")}
+              onClick={() =>
+                setPage("history")
+              }
               className={
                 page === "history"
                   ? "text-blue-600 font-semibold"
@@ -309,16 +510,23 @@ const response = await axios.post(
             <div className="flex items-center gap-2">
 
               <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center font-semibold">
+
                 {(
-                  localStorage.getItem("username") || "A"
+                  localStorage.getItem(
+                    "username"
+                  ) || "A"
                 )
                   .charAt(0)
                   .toUpperCase()}
+
               </div>
 
               <span className="hidden sm:block">
-                {localStorage.getItem("username") ||
-                  "Admin"}
+
+                {localStorage.getItem(
+                  "username"
+                ) || "Admin"}
+
               </span>
 
             </div>
@@ -336,6 +544,7 @@ const response = await axios.post(
 
       </nav>
 
+
       {/* ================= HISTORY ================= */}
 
       {page === "history" ? (
@@ -349,6 +558,7 @@ const response = await axios.post(
       ) : (
 
         <>
+
           {/* ================= HERO ================= */}
 
           <section className="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 text-white">
@@ -377,8 +587,9 @@ const response = await axios.post(
 
                 <p className="mt-4 text-blue-100 text-lg">
 
-                  Upload your recipient list, write your
-                  message, and send your campaign in just
+                  Upload your recipient list,
+                  write your message, and
+                  send your campaign in just
                   a few clicks.
 
                 </p>
@@ -389,11 +600,13 @@ const response = await axios.post(
 
           </section>
 
+
           {/* ================= MAIN ================= */}
 
           <main className="max-w-6xl mx-auto px-6 py-10">
 
             <div className="grid lg:grid-cols-3 gap-8">
+
 
               {/* ================= COMPOSER ================= */}
 
@@ -413,7 +626,9 @@ const response = await axios.post(
 
                   </div>
 
+
                   <div className="p-6 space-y-5">
+
 
                     {/* Subject */}
 
@@ -427,7 +642,10 @@ const response = await axios.post(
                         type="text"
                         value={subject}
                         onChange={(e) => {
-                          setSubject(e.target.value);
+                          setSubject(
+                            e.target.value
+                          );
+
                           setMessage("");
                         }}
                         placeholder="Enter email subject..."
@@ -435,6 +653,7 @@ const response = await axios.post(
                       />
 
                     </div>
+
 
                     {/* Message */}
 
@@ -460,6 +679,7 @@ const response = await axios.post(
                       />
 
                     </div>
+
 
                     {/* Excel */}
 
@@ -494,6 +714,7 @@ const response = await axios.post(
 
                         </div>
 
+
                         <input
                           id="fileUpload"
                           type="file"
@@ -506,7 +727,8 @@ const response = await axios.post(
 
                     </div>
 
-                    {/* Selected file */}
+
+                    {/* Selected File */}
 
                     {fileName && (
 
@@ -540,15 +762,18 @@ const response = await axios.post(
 
                     )}
 
+
                     {/* Status */}
 
                     {message && (
 
                       <div
                         className={`rounded-xl px-4 py-3 text-sm ${
-                          messageType === "success"
+                          messageType ===
+                          "success"
                             ? "bg-green-50 text-green-700 border border-green-200"
-                            : messageType === "error"
+                            : messageType ===
+                              "error"
                             ? "bg-red-50 text-red-700 border border-red-200"
                             : "bg-blue-50 text-blue-700 border border-blue-200"
                         }`}
@@ -557,6 +782,7 @@ const response = await axios.post(
                       </div>
 
                     )}
+
 
                     {/* Send */}
 
@@ -567,6 +793,7 @@ const response = await axios.post(
                     >
 
                       {status ? (
+
                         <span className="flex items-center justify-center gap-2">
 
                           <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
@@ -574,8 +801,11 @@ const response = await axios.post(
                           Sending Emails...
 
                         </span>
+
                       ) : (
+
                         "✈️ Send Campaign"
+
                       )}
 
                     </button>
@@ -586,9 +816,11 @@ const response = await axios.post(
 
               </div>
 
+
               {/* ================= SIDEBAR ================= */}
 
               <div className="space-y-6">
+
 
                 {/* Campaign Overview */}
 
@@ -644,6 +876,7 @@ const response = await axios.post(
 
                 </div>
 
+
                 {/* How it works */}
 
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -661,6 +894,7 @@ const response = await axios.post(
                       </div>
 
                       <div>
+
                         <p className="font-medium text-sm">
                           Write your email
                         </p>
@@ -668,9 +902,11 @@ const response = await axios.post(
                         <p className="text-xs text-slate-500 mt-1">
                           Add a subject and message.
                         </p>
+
                       </div>
 
                     </div>
+
 
                     <div className="flex gap-3">
 
@@ -679,6 +915,7 @@ const response = await axios.post(
                       </div>
 
                       <div>
+
                         <p className="font-medium text-sm">
                           Upload recipients
                         </p>
@@ -686,9 +923,11 @@ const response = await axios.post(
                         <p className="text-xs text-slate-500 mt-1">
                           Upload an Excel file.
                         </p>
+
                       </div>
 
                     </div>
+
 
                     <div className="flex gap-3">
 
@@ -697,6 +936,7 @@ const response = await axios.post(
                       </div>
 
                       <div>
+
                         <p className="font-medium text-sm">
                           Send campaign
                         </p>
@@ -704,6 +944,7 @@ const response = await axios.post(
                         <p className="text-xs text-slate-500 mt-1">
                           BulkMail sends your emails.
                         </p>
+
                       </div>
 
                     </div>
@@ -711,6 +952,7 @@ const response = await axios.post(
                   </div>
 
                 </div>
+
 
                 {/* System */}
 
@@ -741,6 +983,7 @@ const response = await axios.post(
             </div>
 
           </main>
+
 
           {/* ================= FOOTER ================= */}
 
