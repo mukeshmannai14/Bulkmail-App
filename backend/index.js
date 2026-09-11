@@ -38,7 +38,7 @@ app.use(express.json());
 
 
 // ============================================
-// MongoDB
+// MONGODB
 // ============================================
 
 mongoose
@@ -53,25 +53,29 @@ mongoose
 
 
 // ============================================
-// Authentication Middleware
+// AUTHENTICATION MIDDLEWARE
 // ============================================
 
 function authenticateToken(req, res, next) {
 
-  const authHeader = req.headers["authorization"];
+  const authHeader =
+    req.headers["authorization"];
 
   const token =
     authHeader &&
     authHeader.split(" ")[1];
 
+
   if (!token) {
 
     return res.status(401).json({
       success: false,
-      message: "Access denied. Please login.",
+      message:
+        "Access denied. Please login.",
     });
 
   }
+
 
   jwt.verify(
     token,
@@ -82,10 +86,12 @@ function authenticateToken(req, res, next) {
 
         return res.status(403).json({
           success: false,
-          message: "Invalid or expired token.",
+          message:
+            "Invalid or expired token.",
         });
 
       }
+
 
       req.user = user;
 
@@ -98,156 +104,243 @@ function authenticateToken(req, res, next) {
 
 
 // ============================================
+// TEST ROUTE
+// ============================================
+
+app.get("/", (req, res) => {
+
+  res.json({
+
+    success: true,
+
+    message:
+      "BulkMail Backend is running",
+
+  });
+
+});
+
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+
+app.get("/health", (req, res) => {
+
+  res.json({
+
+    success: true,
+
+    backend: true,
+
+    mongodb:
+      mongoose.connection.readyState === 1,
+
+  });
+
+});
+
+
+// ============================================
 // ADMIN LOGIN
 // ============================================
 
-app.post("/auth/login", async (req, res) => {
+app.post(
+  "/auth/login",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      username,
-      password,
-    } = req.body;
+      const {
+        username,
+        password,
+      } = req.body;
 
-
-    // ----------------------------------------
-    // Validation
-    // ----------------------------------------
-
-    if (!username || !password) {
-
-      return res.status(400).json({
-        success: false,
-        message:
-          "Username and password are required.",
-      });
-
-    }
-
-
-    // ----------------------------------------
-    // Check JWT Secret
-    // ----------------------------------------
-
-    if (!process.env.JWT_SECRET) {
 
       console.log(
-        "JWT_SECRET is missing"
+        "Login request received"
       );
+
+
+      // ----------------------------------------
+      // Validate username
+      // ----------------------------------------
+
+      if (!username) {
+
+        return res.status(400).json({
+
+          success: false,
+
+          message:
+            "Username is required.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Validate password
+      // ----------------------------------------
+
+      if (!password) {
+
+        return res.status(400).json({
+
+          success: false,
+
+          message:
+            "Password is required.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Check JWT Secret
+      // ----------------------------------------
+
+      if (!process.env.JWT_SECRET) {
+
+        console.log(
+          "JWT_SECRET is missing"
+        );
+
+        return res.status(500).json({
+
+          success: false,
+
+          message:
+            "JWT_SECRET is not configured.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Find User
+      // ----------------------------------------
+
+      const user =
+        await User.findOne({
+
+          username:
+            username.trim(),
+
+        });
+
+
+      if (!user) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          message:
+            "Invalid username or password.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Compare Password
+      // ----------------------------------------
+
+      const passwordMatch =
+        await bcrypt.compare(
+          password,
+          user.password
+        );
+
+
+      if (!passwordMatch) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          message:
+            "Invalid username or password.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Create Token
+      // ----------------------------------------
+
+      const token =
+        jwt.sign(
+
+          {
+            id: user._id,
+            username:
+              user.username,
+          },
+
+          process.env.JWT_SECRET,
+
+          {
+            expiresIn: "2h",
+          }
+
+        );
+
+
+      console.log(
+        "Login successful:",
+        user.username
+      );
+
+
+      // ----------------------------------------
+      // Response
+      // ----------------------------------------
+
+      return res.status(200).json({
+
+        success: true,
+
+        message:
+          "Login successful",
+
+        token:
+          token,
+
+        username:
+          user.username,
+
+      });
+
+    } catch (error) {
+
+      console.log(
+        "Login error:"
+      );
+
+      console.log(error);
+
 
       return res.status(500).json({
+
         success: false,
+
         message:
-          "JWT configuration is missing.",
+          "Server error",
+
       });
 
     }
-
-
-    // ----------------------------------------
-    // Find User
-    // ----------------------------------------
-
-    const user = await User.findOne({
-      username: username.trim(),
-    });
-
-
-    if (!user) {
-
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid username or password.",
-      });
-
-    }
-
-
-    // ----------------------------------------
-    // Compare Password
-    // ----------------------------------------
-
-    const passwordMatch =
-      await bcrypt.compare(
-        password,
-        user.password
-      );
-
-
-    if (!passwordMatch) {
-
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid username or password.",
-      });
-
-    }
-
-
-    // ----------------------------------------
-    // Create JWT Token
-    // ----------------------------------------
-
-    const token = jwt.sign(
-      {
-        id: user._id,
-        username: user.username,
-      },
-
-      process.env.JWT_SECRET,
-
-      {
-        expiresIn: "2h",
-      }
-    );
-
-
-    console.log(
-      "Login successful:",
-      user.username
-    );
-
-
-    // ----------------------------------------
-    // Response
-    // ----------------------------------------
-
-    return res.status(200).json({
-
-      success: true,
-
-      message:
-        "Login successful",
-
-      token: token,
-
-      username:
-        user.username,
-
-    });
-
-  } catch (error) {
-
-    console.log(
-      "Login error:",
-      error
-    );
-
-    return res.status(500).json({
-
-      success: false,
-
-      message:
-        "Server error",
-
-    });
 
   }
-
-});
+);
 
 
 // ============================================
@@ -268,22 +361,12 @@ app.post(
       } = req.body;
 
 
-      // ========================================
-      // EMAIL LIST
-      // ========================================
-
-      const emailList = Array.isArray(emails)
-        ? emails
-        : [];
-
-
       console.log(
         "================================"
       );
 
       console.log(
-        "Message:",
-        msg
+        "SEND EMAIL REQUEST"
       );
 
       console.log(
@@ -292,8 +375,13 @@ app.post(
       );
 
       console.log(
+        "Message:",
+        msg
+      );
+
+      console.log(
         "Email List:",
-        emailList
+        emails
       );
 
       console.log(
@@ -301,9 +389,9 @@ app.post(
       );
 
 
-      // ========================================
+      // ----------------------------------------
       // Validation
-      // ========================================
+      // ----------------------------------------
 
       if (
         !subject ||
@@ -311,9 +399,12 @@ app.post(
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Subject is required.",
+
         });
 
       }
@@ -325,12 +416,55 @@ app.post(
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Message is required.",
+
         });
 
       }
+
+
+      if (
+        !Array.isArray(emails) ||
+        emails.length === 0
+      ) {
+
+        return res.status(400).json({
+
+          success: false,
+
+          message:
+            "Email list is empty.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Clean Email List
+      // ----------------------------------------
+
+      const emailList = [
+        ...new Set(
+
+          emails
+            .map((email) =>
+              String(email)
+                .trim()
+                .toLowerCase()
+            )
+
+            .filter(
+              (email) =>
+                email !== ""
+            )
+
+        ),
+      ];
 
 
       if (
@@ -338,50 +472,74 @@ app.post(
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
-            "Email list is empty.",
+            "No valid email addresses found.",
+
         });
 
       }
 
 
-      // ========================================
-      // Clean Email List
-      // ========================================
+      // ----------------------------------------
+      // Email Validation
+      // ----------------------------------------
 
-      const cleanEmailList = [
-        ...new Set(
-          emailList
-            .map((email) =>
-              String(email)
-                .trim()
-                .toLowerCase()
-            )
-            .filter(
-              (email) =>
-                email !== ""
-            )
-        ),
-      ];
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+
+      const invalidEmails =
+        emailList.filter(
+          (email) =>
+            !emailRegex.test(email)
+        );
 
 
       if (
-        cleanEmailList.length === 0
+        invalidEmails.length > 0
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
-            "No valid email addresses found.",
+            "Invalid email address found.",
+
+          invalidEmails:
+            invalidEmails,
+
         });
 
       }
 
 
-      // ========================================
-      // Get Gmail Credentials
-      // ========================================
+      // ----------------------------------------
+      // Check MongoDB
+      // ----------------------------------------
+
+      if (
+        mongoose.connection.readyState !== 1
+      ) {
+
+        return res.status(500).json({
+
+          success: false,
+
+          message:
+            "MongoDB is not connected.",
+
+        });
+
+      }
+
+
+      // ----------------------------------------
+      // Get Email Credentials
+      // ----------------------------------------
 
       const emailData =
         await Email.findOne();
@@ -394,9 +552,12 @@ app.post(
         );
 
         return res.status(500).json({
+
           success: false,
+
           message:
             "Email credentials not found in MongoDB.",
+
         });
 
       }
@@ -408,9 +569,12 @@ app.post(
       ) {
 
         return res.status(500).json({
+
           success: false,
+
           message:
             "Email credentials are incomplete.",
+
         });
 
       }
@@ -422,9 +586,9 @@ app.post(
       );
 
 
-      // ========================================
+      // ----------------------------------------
       // Create Transporter
-      // ========================================
+      // ----------------------------------------
 
       const transporter =
         nodemailer.createTransport({
@@ -444,37 +608,43 @@ app.post(
         });
 
 
-      // ========================================
+      // ----------------------------------------
       // Verify Gmail
-      // ========================================
+      // ----------------------------------------
 
       try {
 
         await transporter.verify();
 
         console.log(
-          "Gmail transporter verified successfully"
+          "Gmail transporter verified"
         );
 
       } catch (error) {
 
         console.log(
-          "Gmail transporter error:",
+          "Gmail connection error:"
+        );
+
+        console.log(
           error.message
         );
 
         return res.status(500).json({
+
           success: false,
+
           message:
             "Unable to connect to Gmail. Check email credentials.",
+
         });
 
       }
 
 
-      // ========================================
+      // ----------------------------------------
       // Create Campaign
-      // ========================================
+      // ----------------------------------------
 
       const campaign =
         await Campaign.create({
@@ -486,7 +656,7 @@ app.post(
             msg.trim(),
 
           recipients:
-            cleanEmailList,
+            emailList,
 
           status:
             "pending",
@@ -494,22 +664,18 @@ app.post(
         });
 
 
-      // ========================================
-      // Counters
-      // ========================================
-
       let sentCount = 0;
 
       let failedCount = 0;
 
 
-      // ========================================
+      // ----------------------------------------
       // Send Emails
-      // ========================================
+      // ----------------------------------------
 
       for (
         let i = 0;
-        i < cleanEmailList.length;
+        i < emailList.length;
         i++
       ) {
 
@@ -522,7 +688,7 @@ app.post(
                 emailData.email,
 
               to:
-                cleanEmailList[i],
+                emailList[i],
 
               subject:
                 subject.trim(),
@@ -535,7 +701,7 @@ app.post(
 
           console.log(
             "Email sent:",
-            cleanEmailList[i]
+            emailList[i]
           );
 
 
@@ -551,7 +717,7 @@ app.post(
 
           console.log(
             "Failed to send:",
-            cleanEmailList[i]
+            emailList[i]
           );
 
 
@@ -567,16 +733,16 @@ app.post(
       }
 
 
-      // ========================================
-      // Determine Campaign Status
-      // ========================================
+      // ----------------------------------------
+      // Campaign Status
+      // ----------------------------------------
 
       let campaignStatus;
 
 
       if (
         sentCount ===
-        cleanEmailList.length
+        emailList.length
       ) {
 
         campaignStatus =
@@ -597,9 +763,9 @@ app.post(
       }
 
 
-      // ========================================
+      // ----------------------------------------
       // Update Campaign
-      // ========================================
+      // ----------------------------------------
 
       campaign.sent =
         sentCount;
@@ -614,9 +780,9 @@ app.post(
       await campaign.save();
 
 
-      // ========================================
+      // ----------------------------------------
       // Response
-      // ========================================
+      // ----------------------------------------
 
       return res.status(200).json({
 
@@ -629,7 +795,7 @@ app.post(
           campaignStatus,
 
         total:
-          cleanEmailList.length,
+          emailList.length,
 
         sent:
           sentCount,
@@ -691,9 +857,10 @@ app.get(
     } catch (error) {
 
       console.log(
-        "History error:",
-        error
+        "History error:"
       );
+
+      console.log(error);
 
 
       return res.status(500).json({
@@ -749,9 +916,10 @@ app.get(
     } catch (error) {
 
       console.log(
-        "Get campaign error:",
-        error
+        "Get campaign error:"
       );
+
+      console.log(error);
 
 
       return res.status(500).json({
@@ -770,46 +938,28 @@ app.get(
 
 
 // ============================================
-// TEST ROUTE
-// ============================================
-
-app.get("/", (req, res) => {
-
-  res.json({
-
-    success: true,
-
-    message:
-      "BulkMail Backend is running",
-
-  });
-
-});
-
-
-// ============================================
 // 404 ROUTE
 // ============================================
 
-app.use((req, res) => {
+app.use(
+  (req, res) => {
 
-  res.status(404).json({
+    return res.status(404).json({
 
-    success: false,
+      success: false,
 
-    message:
-      `Route ${req.method} ${req.originalUrl} not found.`,
+      message:
+        `Route ${req.method} ${req.originalUrl} not found.`,
 
-  });
+    });
 
-});
+  }
+);
 
 
 // ============================================
-// SERVER
+// LOCAL SERVER
 // ============================================
-
-// Local development
 
 if (require.main === module) {
 
@@ -828,7 +978,7 @@ if (require.main === module) {
 
 
 // ============================================
-// VERCEL
+// VERCEL EXPORT
 // ============================================
 
 module.exports = app;
